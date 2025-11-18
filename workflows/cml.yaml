@@ -1,4 +1,4 @@
-name: CI for RF weather project
+name: CI for RF temperature project
 
 on: [push]
 
@@ -21,4 +21,10 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run training
-        run: python src/train_rf.py
+        run: python train.py
+
+      - name: Upload plot
+        uses: actions/upload-artifact@v4
+        with:
+          name: rf-maxtemp-plot
+          path: rf_maxtemp_pred_vs_real.png
