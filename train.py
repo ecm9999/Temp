@@ -41,7 +41,7 @@ def load_and_preprocess(path: str) -> pd.DataFrame:
         "Fog": 0,
         "Haze": 1,
         "Light Rain": 2,
-        "Light rain": 2,
+        "Light rain": 2,  # por si viene con minúscula
         "Mist": 3,
         "Rain": 4,
         "Smoke": 5,
@@ -85,10 +85,15 @@ def train_plot_and_metrics(df: pd.DataFrame, plot_path: str, metrics_path: str):
 
     # ====== MÉTRICAS ======
     mae = mean_absolute_error(y_test, y_pred)
-    rmse = mean_squared_error(y_test, y_pred, squared=False)
+
+    # En algunas versiones de scikit-learn no existe "squared" en mean_squared_error,
+    # así que calculamos RMSE a partir del MSE para máxima compatibilidad.
+    mse = mean_squared_error(y_test, y_pred)  # por defecto squared=True
+    rmse = np.sqrt(mse)
+
     r2 = r2_score(y_test, y_pred)
 
-    # Mostrar en los logs (GitHub Actions los va a mostrar aquí)
+    # Mostrar en los logs (GitHub Actions los muestra aquí)
     print("===== Métricas Random Forest (maxtemp) =====")
     print(f"MAE : {mae:.3f}")
     print(f"RMSE: {rmse:.3f}")
