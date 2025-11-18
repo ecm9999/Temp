@@ -1,84 +1,105 @@
-import pandas as pd
+# train.py
+
+import datetime as dt
+import os
+
 import numpy as np
-from sklearn import metrics
-import streamlit as st
-import tensorflow as tf
-from tensorflow import keras
-import pickle
-import datetime
-from sklearn.preprocessing import StandardScaler
+import pandas as pd
+import matplotlib.pyplot as plt
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split
 
-html_temp = '''
-    <div style = "background-color: rgba(25,25,112,0.0); padding-bottom: 20px; padding-top: 20px; padding-left: 5px; padding-right: 5px">
-    <center><h1>Weather Predictor</h1></center>
-    
-    </div>
-    '''
-st.markdown(html_temp, unsafe_allow_html=True)
+DATA_FILE = "data.csv"
+PLOT_FILE = "rf_maxtemp_pred_vs_real.png"
 
-ann_model_maxtemp = tf.keras.models.load_model('model/ann_model_maxtemp.h5')
-ann_model_mintemp = tf.keras.models.load_model('model/ann_model_mintemp.h5')
 
-gru_model_maxtemp = tf.keras.models.load_model('model/gru_model_maxtemp.h5')
-gru_model_mintemp = tf.keras.models.load_model('model/gru_model_mintemp.h5')
+def load_and_preprocess(path: str) -> pd.DataFrame:
+    df = pd.read_csv(path)
 
-rf_model_maxtemp = pickle.load(open('model/rf_model_maxtemp.pkl','rb'))
-rf_model_mintemp = pickle.load(open('model/rf_model_mintemp.pkl','rb'))
+    # Eliminar columnas que sobran si existen
+    for col in ["Unnamed: 0", "cloud"]:
+        if col in df.columns:
+            df = df.drop(columns=[col])
 
-svr_model_maxtemp = pickle.load(open('model/svr_model_maxtemp.pkl','rb'))
-svr_model_mintemp = pickle.load(open('model/svr_model_mintemp.pkl','rb'))
+    # Fecha -> número de días
+    if "Date" not in df.columns:
+        raise ValueError("El dataset debe tener una columna 'Date'.")
 
-model = st.selectbox("Please Select your model from the following options",("Please Select","Artificial Neural Networks","Support Vector Machine","Random Forest Regressor","Gated Recurrent Units"))
+    # Intenta parsear formato tipo 01.04.2017 o similar
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce", dayfirst=True)
+    origin = dt.datetime(2017, 4, 1)
+    df["Date_num"] = (df["Date"] - origin).dt.days
 
-data = []
-data.append(st.sidebar.date_input('Enter Date'))
-data.append(st.sidebar.slider('Pressure',700,800,760))
-data.append(st.sidebar.number_input('Humidity'))
-data.append(st.sidebar.number_input('Wind Speed'))
-data.append(st.sidebar.selectbox("Weather Condition",("Please Select","Fog","Haze","Light Rain","Mist","Rain","Smoke")))
+    # Codificar variable categórica "weather"
+    if "weather" not in df.columns:
+        raise ValueError("El dataset debe tener una columna 'weather'.")
 
-#st.success(data[0])
-origin = datetime.datetime(2017,4,1)
-data[0] = (datetime.datetime.strptime(str(data[0]), '%Y-%m-%d') - origin).days
+    weather_map = {
+        "Fog": 0,
+        "Haze": 1,
+        "Light Rain": 2,
+        "Light rain": 2,
+        "Mist": 3,
+        "Rain": 4,
+        "Smoke": 5,
+    }
+    df["weather_code"] = df["weather"].map(weather_map)
 
-if data[4] == 'Fog':
-    data[4] = 0
-elif data[4] == 'Haze':
-    data[4] = 1
-elif data[4] == 'Light Rain':
-    data[4] = 2
-elif data[4] == 'Mist':
-    data[4] = 3
-elif data[4] == 'Rain':
-    data[4] = 4
-elif data[4] == 'Smoke':
-    data[4] = 5
+    # Quitar filas donde no se pudo mapear o falta algo
+    df = df.dropna(subset=["Date_num", "weather_code"])
 
-scaler = StandardScaler()
-data = scaler.fit_transform([data])
+    # Asegurar tipo numérico
+    df["weather_code"] = df["weather_code"].astype(int)
 
-#st.write(data.shape)
+    return df
 
-if st.button('Predict'):
 
-    if model == "Artificial Neural Networks":
-        max = ann_model_maxtemp.predict([data])
-        min = ann_model_mintemp.predict([data])
-        st.info('Maximum Temperature: {} \n Minimum Temperature: {}'.format(max[0][0],min[0][0]))
-    
-    if model == "Support Vector Machine":
-        data = data.tolist()
-        st.write(data)
-        max = svr_model_maxtemp.predict(data)
-        min = svr_model_mintemp.predict(data)
-        st.info('Maximum Temperature: {}\nMinimum Temperature: {}'.format(max[0],min[0]))
-    
-    if model == "Random Forest Regressor":
-        max = rf_model_maxtemp.predict(pd.DataFrame(columns=["Date", "pressure", "humidity", "mean wind speed", "weather"],data=np.array(data).reshape(1,5)))
-        min = rf_model_mintemp.predict(pd.DataFrame(columns=["Date", "pressure", "humidity", "mean wind speed", "weather"],data=np.array(data).reshape(1,5)))
-        st.info('Maximum Temperature: {}\nMinimum Temperature: {}'.format(max[0],min[0]))
+def train_and_plot(df: pd.DataFrame, plot_path: str):
+    if "maxtemp" not in df.columns:
+        raise ValueError("El dataset debe tener una columna 'maxtemp'.")
 
-    if model == "Gated Recurrent Units":
-        max = gru_model_maxtemp.predict([data])
-        min = gru_model_mintemp.predict([data])
-        st.info('Maximum Temperature: {}\nMinimum Temperature: {}'.format(max[0][0],min[0][0]))
+    features = ["Date_num", "pressure", "humidity", "mean wind speed", "weather_code"]
+
+    for f in features:
+        if f not in df.columns:
+            raise ValueError(f"Falta la columna '{f}' en el dataset.")
+
+    X = df[features]
+    y = df["maxtemp"]
+
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.2, random_state=42
+    )
+
+    model = RandomForestRegressor(
+        n_estimators=200,
+        random_state=42,
+        n_jobs=-1
+    )
+    model.fit(X_train, y_train)
+
+    y_pred = model.predict(X_test)
+
+    # Gráfico: real vs predicho
+    plt.figure(figsize=(6, 6))
+    plt.scatter(y_test, y_pred, alpha=0.5, label="Predicciones RF")
+    min_temp = min(y_test.min(), y_pred.min())
+    max_temp = max(y_test.max(), y_pred.max())
+    plt.plot([min_temp, max_temp], [min_temp, max_temp], "r--", label="Línea ideal")
+    plt.xlabel("Temperatura real (maxtemp)")
+    plt.ylabel("Temperatura predicha (maxtemp)")
+    plt.title("Random Forest: real vs predicho (maxtemp)")
+    plt.legend()
+    plt.tight_layout()
+    plt.savefig(plot_path, dpi=150)
+    plt.close()
+
+    print(f"Gráfico guardado en: {plot_path}")
+
+
+if __name__ == "__main__":
+    if not os.path.exists(DATA_FILE):
+        raise FileNotFoundError(f"No se encontró '{DATA_FILE}' en la carpeta actual.")
+
+    df = load_and_preprocess(DATA_FILE)
+    train_and_plot(df, PLOT_FILE)
