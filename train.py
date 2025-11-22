@@ -28,7 +28,7 @@ def load_and_preprocess(path: str) -> pd.DataFrame:
     if "Date" not in df.columns:
         raise ValueError("El dataset debe tener una columna 'Date'.")
 
-    # Intenta parsear formato tipo 01.04.2017 o similar
+
     df["Date"] = pd.to_datetime(df["Date"], errors="coerce", dayfirst=True)
     origin = dt.datetime(2017, 4, 1)
     df["Date_num"] = (df["Date"] - origin).dt.days
@@ -75,7 +75,7 @@ def train_plot_and_metrics(df: pd.DataFrame, plot_path: str, metrics_path: str):
     )
 
     model = RandomForestRegressor(
-        n_estimators=200,
+        n_estimators=500,
         random_state=42,
         n_jobs=-1
     )
